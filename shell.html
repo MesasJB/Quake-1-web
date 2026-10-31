@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quake</title>
+<style>
+  :root { --bg:#08090d; --panel:#10121a; --line:#232738; --text:#e8eaf2; --muted:#8b90a6; --accent:#c8742a; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display:flex; align-items:center; justify-content:center; padding:16px; }
+
+  .card { width:min(100%, 1280px); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; }
+
+  /* Pantalla de inicio */
+  #start { text-align:center; padding:48px 16px; }
+  #start .tag { font-size:11px; letter-spacing:.3em; color:var(--muted); text-transform:uppercase; }
+  #start h1 { font-size:clamp(34px, 7vw, 60px); margin:10px 0 6px; letter-spacing:.12em; }
+  #start h1 span { color:var(--accent); }
+  #start p { color:var(--muted); max-width:520px; margin:0 auto 24px; line-height:1.5; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:10px; padding:12px 26px; font-weight:600; }
+  #playBtn { background:#fff; color:#000; font-size:17px; }
+  #playBtn:hover { background:#e6e6e6; }
+  #playBtn:disabled { opacity:.6; cursor:default; }
+  #status { margin-top:16px; font-size:13px; color:var(--muted); min-height:18px; }
+  progress { width:min(300px, 80%); height:8px; margin-top:12px; accent-color:var(--accent); }
+
+  /* Juego */
+  #game { display:none; }
+
+  /* El escenario lleva la imagen de fondo: se ve en las barras negras a los costados del juego */
+  #stage { position:relative; width:100%; aspect-ratio:16 / 9; border-radius:10px; overflow:hidden;
+           background:#000 url('fondo.jpg') center / cover no-repeat;
+           display:flex; align-items:center; justify-content:center; }
+  /* El juego es 4:3: se centra y las barras laterales muestran la imagen */
+  canvas#canvas { display:none; height:100%; aspect-ratio:4 / 3; max-width:100%; border:0 none; outline:none; background:#000; }
+  textarea#output { display:none; position:absolute; inset:0; width:100%; height:100%; margin:0; padding:10px;
+                    background:rgba(0,0,0,.85); color:#c0c0c0; border:0; resize:none; outline:none;
+                    font-family:ui-monospace, Consolas, monospace; font-size:13px; }
+
+  /* Pantalla completa: se escala solo con CSS, sin tocar la resolucion del juego */
+  #stage:fullscreen, #stage:-webkit-full-screen { width:100vw; height:100vh; aspect-ratio:auto; border-radius:0; }
+  #stage:fullscreen canvas#canvas, #stage:-webkit-full-screen canvas#canvas { height:100vh; max-width:100vw; }
+
+  .bar { display:flex; justify-content:space-between; align-items:center; margin-top:12px; gap:12px; flex-wrap:wrap; }
+  .bar small { color:var(--muted); }
+  #fps { font-variant-numeric: tabular-nums; color:var(--muted); font-size:13px; margin-right:8px; }
+  button.sec { background:#1c2032; color:var(--text); border:1px solid var(--line); padding:9px 16px; margin-left:6px; }
+  button.sec:hover { background:#252a42; }
+
+  /* Disposicion: juego a la izquierda, salas online a la derecha */
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:14px; align-items:start; }
+  @media (max-width: 860px) { .layout { grid-template-columns:1fr; } }
+  .main { min-width:0; }
+
+  #side { background:#0c0e15; border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:10px; }
+  #side h2 { margin:0; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  #roomCount { background:var(--accent); color:#000; border-radius:99px; padding:0 7px; font-size:11px; font-weight:700; }
+  #roomCount:empty { display:none; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#666; flex:none; }
+  .dot.ok { background:#3ecf6a; } .dot.bad { background:#e5484d; } .dot.connecting { background:#e5b84d; }
+  #netLine { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  #me { font-size:13px; color:var(--muted); line-height:1.4; }
+  #me b { color:var(--text); }
+  #roomList { display:flex; flex-direction:column; gap:8px; min-height:60px; max-height:min(52vh, 430px); overflow-y:auto; }
+  .empty { color:var(--muted); font-size:13px; line-height:1.45; padding:10px 4px; }
+  .room { display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:9px 10px; }
+  .room .info { flex:1; min-width:0; }
+  .rname { font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rmeta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .room .mine { font-size:11px; color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  button.join { margin:0; padding:7px 12px; font-size:13px; }
+  button.join:disabled { opacity:.5; cursor:default; }
+  #side details { font-size:12px; color:var(--muted); }
+  #side summary { cursor:pointer; }
+  #side details div { display:flex; gap:6px; margin-top:8px; }
+  #srvInput { flex:1; min-width:0; background:#0c0e15; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 9px; font:inherit; font-size:12px; }
+  #srvSave { margin:0; padding:7px 12px; font-size:12px; }
+
+  /* Ventanita "name?:" y avisos, arriba del juego */
+  #namePrompt, #toast { position:absolute; left:50%; transform:translateX(-50%); z-index:5; border-radius:8px;
+                        font-family:ui-monospace, Consolas, monospace; font-size:14px; }
+  #namePrompt { top:10px; display:flex; align-items:center; gap:8px; padding:8px 10px;
+                background:rgba(16,18,26,.96); border:1px solid var(--accent); color:var(--text); box-shadow:0 6px 24px rgba(0,0,0,.55); }
+  #namePrompt[hidden], #toast[hidden] { display:none; }
+  #namePrompt label { color:var(--accent); font-weight:700; }
+  #nameInput { width:11ch; background:#000; color:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; outline:none; }
+  #nameInput:focus { border-color:var(--accent); }
+  #namePrompt button { margin:0; padding:5px 10px; font-size:12px; }
+  #toast { bottom:12px; padding:8px 14px; background:rgba(16,18,26,.94); border:1px solid var(--line); color:var(--text); max-width:90%; text-align:center; }
+</style>
+</head>
+<body>
+  <div class="card">
+
+    <div id="start">
+      <div class="tag">Decompilaci&oacute;n Qwasm</div>
+      <h1>QUAKE</h1>
+      <p>Quake corriendo directo en tu navegador. Al tocar Jugar se descarga el juego y empieza solo.</p>
+      <button id="playBtn">&#9654; Jugar</button>
+      <div><progress id="progress" hidden max="100" value="0"></progress></div>
+      <div id="status"></div>
+    </div>
+
+    <div id="game">
+      <div class="layout">
+        <div class="main">
+          <div id="stage">
+            <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+            <textarea id="output" readonly></textarea>
+            <div id="namePrompt" hidden>
+              <label for="nameInput">name?:</label>
+              <input id="nameInput" maxlength="15" autocomplete="off" spellcheck="false">
+              <button id="nameOk" class="sec">OK</button>
+              <button id="nameCancel" class="sec">&#10005;</button>
+            </div>
+            <div id="toast" hidden></div>
+          </div>
+          <div class="bar">
+            <small>Hac&eacute; clic en el juego para capturar el mouse. Esc abre el men&uacute;.</small>
+            <span>
+              <span id="fps">-- FPS</span>
+              <button id="delBtn" class="sec">&#128465; Borrar guardado</button>
+              <button id="fsBtn" class="sec">&#9974; Pantalla completa</button>
+            </span>
+          </div>
+        </div>
+
+        <aside id="side">
+          <h2>Salas online <span id="roomCount"></span></h2>
+          <div id="netLine"><span id="netDot" class="dot"></span><span id="netText">Sin conectar</span></div>
+          <div id="me">Jugador: <b id="myName">player</b><br>Para cambiar tu nombre: <b>Multiplayer &rarr; TCP/IP</b> (aparece <b>name?:</b> arriba).</div>
+          <div id="roomList"></div>
+          <details>
+            <summary>Servidor</summary>
+            <div><input id="srvInput" spellcheck="false" autocomplete="off"><button id="srvSave" class="sec">Guardar</button></div>
+          </details>
+        </aside>
+      </div>
+    </div>
+
+  </div>
+  <a id="exportFile" hidden></a>
+
+  <!-- Aqui Emscripten pone el script del juego; lo cargamos recien al tocar Jugar -->
+  <template id="gameScript">
+    {{{ SCRIPT }}}
+  </template>
+
+<script src="online.js"></script>
+<script>
+  var statusEl   = document.getElementById('status');
+  var progressEl = document.getElementById('progress');
+  var playBtn    = document.getElementById('playBtn');
+  var canvasEl   = document.getElementById('canvas');
+  var outputEl   = document.getElementById('output');
+  var exportEl   = document.getElementById('exportFile');
+  var stage      = document.getElementById('stage');
+  var startEl    = document.getElementById('start');
+  var gameEl     = document.getElementById('game');
+
+  function showGame() {
+    startEl.style.display = 'none';
+    gameEl.style.display = 'block';
+  }
+
+  var Module = {
+    preRun: [],
+    postRun: [],
+    _canLockPointer: true,
+    canvas: (function () {
+      canvasEl.addEventListener('webglcontextlost', function (e) {
+        alert('Se perdi\u00f3 el contexto gr\u00e1fico. Recarg\u00e1 la p\u00e1gina.');
+        e.preventDefault();
+      }, false);
+      return canvasEl;
+    })(),
+    print: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.log(text);
+      outputEl.value += text + '\n';
+      outputEl.scrollTop = outputEl.scrollHeight;
+    },
+    printErr: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.warn(text);
+    },
+    setStatus: function (text) {
+      if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+      if (text === Module.setStatus.last.text) return;
+      var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+      var now = Date.now();
+      if (m && now - Module.setStatus.last.time < 30) return;
+      Module.setStatus.last.time = now;
+      Module.setStatus.last.text = text;
+      if (m) {
+        progressEl.hidden = false;
+        progressEl.max = parseInt(m[4]);
+        progressEl.value = parseFloat(m[2]);
+        statusEl.textContent = 'Descargando\u2026 ' + Math.round(100 * m[2] / m[4]) + '%';
+      } else {
+        progressEl.hidden = true;
+        statusEl.textContent = text;
+      }
+    },
+    // --- Ganchos que usa el motor ---
+    hideConsole: function () {
+      outputEl.style.display = 'none';
+      canvasEl.style.display = 'block';
+      canvasEl.focus();
+    },
+    showConsole: function () {
+      showGame();
+      canvasEl.style.display = 'none';
+      outputEl.style.display = 'block';
+      outputEl.scrollTop = outputEl.scrollHeight;
+      outputEl.focus();
+    },
+    exportFile: function (filePath) {
+      try {
+        var parts = filePath.split('/');
+        var fsys = (typeof FS !== 'undefined') ? FS : Module.FS;
+        var data = new Uint8Array(fsys.readFile(filePath));
+        var url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }));
+        exportEl.href = url;
+        exportEl.download = parts[parts.length - 1];
+        exportEl.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error al exportar el archivo:', error);
+      }
+    },
+    setGamma: function (vidGamma) {
+      vidGamma = Number(Number(vidGamma).toFixed(2));
+      canvasEl.style.filter = 'brightness(' + ((1.35 - vidGamma) * 2) + ')';
+    },
+    captureMouse: function () {
+      if (Module._canLockPointer && !Module._attemptPointerLock()) {
+        Module._canLockPointer = false;
+        document.addEventListener('keydown', Module._lockPointerOnKey);
+      }
+    },
+    _attemptPointerLock: function () {
+      if (document.pointerLockElement === null) canvasEl.requestPointerLock();
+      return document.pointerLockElement !== null;
+    },
+    _lockPointerOnKey: function (event) {
+      if ((event.key === 'Escape') || Module._attemptPointerLock()) {
+        document.removeEventListener('keydown', Module._lockPointerOnKey);
+        Module._canLockPointer = true;
+      }
+    },
+    totalDependencies: 0,
+    monitorRunDependencies: function (left) {
+      this.totalDependencies = Math.max(this.totalDependencies, left);
+      Module.setStatus(left ? 'Preparando\u2026 (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : 'Descarga completa.');
+    },
+    onRuntimeInitialized: function () {
+      // Mostramos el juego con la consola de texto hasta que el motor llame a hideConsole()
+      outputEl.style.display = 'block';
+      showGame();
+    }
+  };
+  Module['arguments'] = window.location.search.length > 1 ? window.location.search.substr(1).split('&') : [];
+
+  window.onerror = function () {
+    statusEl.textContent = 'Error: mir\u00e1 la consola del navegador (F12).';
+    showGame();
+  };
+
+  // --- Boton Jugar: el juego se carga DESPUES del clic, asi el sonido queda habilitado ---
+  playBtn.addEventListener('click', function () {
+    playBtn.disabled = true;
+    playBtn.textContent = 'Cargando\u2026';
+    Module.setStatus('Descargando\u2026');
+    var tpl = document.getElementById('gameScript');
+    var src = 'index.js';
+    var m = tpl.innerHTML.match(/src=["']([^"']+)["']/);
+    if (m) src = m[1];
+    var s = document.createElement('script');
+    s.src = src;
+    s.onerror = function () {
+      statusEl.textContent = 'No se pudo cargar ' + src;
+      playBtn.disabled = false;
+      playBtn.textContent = '\u25B6 Jugar';
+    };
+    document.body.appendChild(s);
+  });
+
+  // --- Pantalla completa (sobre el escenario: asi tambien se ve la imagen de fondo) ---
+  document.getElementById('fsBtn').addEventListener('click', function () {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
+    }
+    canvasEl.focus();
+  });
+
+  // --- Contador de FPS reales (los frames que dibuja el motor) ---
+  var lastFrames = null, lastTime = performance.now();
+  setInterval(function () {
+    var el = document.getElementById('fps');
+    if (typeof Module._frames !== 'number') { el.textContent = '-- FPS'; return; }
+    var now = performance.now();
+    if (lastFrames !== null) {
+      var fps = (Module._frames - lastFrames) * 1000 / (now - lastTime);
+      el.textContent = Math.round(fps) + ' FPS';
+    }
+    lastFrames = Module._frames;
+    lastTime = now;
+  }, 1000);
+
+  // --- Borrar partidas guardadas (viven en la base de datos del navegador) ---
+  document.getElementById('delBtn').addEventListener('click', function () {
+    if (!confirm('\u00bfBorrar las partidas guardadas y la configuraci\u00f3n? No se puede deshacer.')) return;
+    try {
+      var req = indexedDB.deleteDatabase('/qwasm');
+      req.onsuccess = req.onerror = req.onblocked = function () { location.reload(); };
+    } catch (e) { location.reload(); }
+  });
+
+  // Que las flechas y el espacio no hagan scroll en la pagina
+  window.addEventListener('keydown', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].indexOf(e.key) > -1) e.preventDefault();
+  }, { passive: false });
+</script>
+</body>
+</html>
